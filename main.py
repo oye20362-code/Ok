@@ -1,50 +1,77 @@
-import os
-import requests
-from telegram.ext import Updater, CommandHandler
-from flask import Flask
+import asyncio
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-TOKEN = os.getenv("BOT_TOKEN")
+from TikTokApi import TikTokApi
 
-app = Flask(__name__)
+api = TikTokApi()
 
-@app.route("/")
-def home():
-    return "Bot is running!"
+# ===== COMMAND: /start =====
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Bot TikTok Online ✔\nGửi /info username")
 
-def info(update, context):
+# ===== COMMAND: /info username =====
+async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) == 0:
-        update.message.reply_text("Nhập username đi. Ví dụ:\n/info kien")
-        return
+        return await update.message.reply_text("Nhập username: /info therock")
 
-    user = context.args[0]
+    username = context.args[0].replace("@", "")
 
-    url = f"https://tiktok.livecounts.io/user/@{user}"
-    data = requests.get(url).json()
+    try:
+        user = api.user(username=username)
+        data = await user.info()
 
-    if "user" not in data:
-        update.message.reply_text("Không tìm thấy user.")
-        return
+        user_info = data["userInfo"]["user"]
 
-    user_data = data["user"]
+        text = (
+            f"📊 *THÔNG TIN TIKTOK*\n"
+            f"• Username: @{user_info['uniqueId']}\n"
+            f"• ID: {user_info['id']}\n"
+            f"• secUid: {user_info['secUid']}\n"
+            f"• Tên hiển thị: {user_info.get('nickname','N/A')}\n"
+            f"• Follower: {user_info['stats']['followerCount']}\n"
+            f"• Following: {user_info['stats']['followingCount']}\n"
+            f"• Video: {user_info['stats']['videoCount']}\n"
+        )
 
-    msg = f"""
-📊 *Thông tin TikTok*  
-👤 Username: @{user_data['uniqueId']}
-🆔 ID: {user_data['id']}
-📛 Tên: {user_data['nickname']}
-👥 Follower: {user_data['followerCount']}
-👤 Following: {user_data['followingCount']}
-❤️ Tim: {user_data['heartCount']}
-    """
+        await update.message.reply_text(text, parse_mode="Markdown")
 
-    update.message.reply_text(msg, parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"Lỗi không lấy được info!\n{e}")
 
-def main():
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
-    dp.add_handler(CommandHandler("info", info))
-    updater.start_polling()
-    updater.idle()
+# ===== COMMAND: /videos username =====
+async def videos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) == 0:
+        return await update.message.reply_text("Nhập username: /videos therock")
+
+    username = context.args[0].replace("@", "")
+    msg = await update.message.reply_text("Đang lấy video...")
+
+    try:
+        user = api.user(username=username)
+        gen = user.videos(count=5)
+
+        async for v in gen:
+            video_data = v.as_dict
+
+            link = f"https://www.tiktok.com/@{username}/video/{video_data['id']}"
+            await update.message.reply_text(link)
+
+        await msg.edit_text("Hoàn tất ✔")
+
+    except Exception as e:
+        await msg.edit_text(f"Lỗi: {e}")
+
+# ===== MAIN =====
+async def main():
+    app = ApplicationBuilder().token("YOUR_TELEGRAM_BOT_TOKEN").build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("info", info))
+    app.add_handler(CommandHandler("videos", videos))
+
+    print("Bot chạy rồi ✔")
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
