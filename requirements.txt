@@ -1,3 +1,4 @@
-python-telegram-bot==13.15
-Flask
-requests
+python-telegram-bot==20.7
+TikTokApi==6.2.3
+asyncio
+aiohttp
